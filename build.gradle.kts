@@ -1,11 +1,14 @@
 plugins {
     kotlin("multiplatform") version "1.4.21"
+    kotlin("plugin.serialization") version "1.4.21"
 }
 
 repositories {
     jcenter()
     mavenCentral()
 }
+
+val ktorVersion = "1.5.0"
 
 kotlin {
     kotlin {
@@ -19,7 +22,10 @@ kotlin {
             }
             val jvmMain by getting {
                 dependencies {
-                  implementation(kotlin("stdlib-jdk8"))
+                    implementation(kotlin("stdlib-jdk8"))
+                    implementation("io.ktor:ktor-client-websockets:$ktorVersion")
+                    implementation("io.ktor:ktor-client-cio:$ktorVersion")
+                    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.0.1")
                 }
             }
         }
