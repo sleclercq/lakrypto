@@ -4,7 +4,10 @@ import io.ktor.http.cio.websocket.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  *
@@ -18,6 +21,11 @@ val defaultTickers = listOf("BTCUSDT", "ETHUSDT", "ETHBTC", "LTCBTC", "DOGEBTC",
 data class Message(val method: String, val params: List<String>, val id: Int)
 
 enum class ConnectionStatus { DISCONNECTED, CONNECTED }
+
+@Serializable
+data class BinanceSubscription(@Required val method: String = "SUBSCRIBE",
+                               @Required val params: List<String> = listOf(),
+                               @Required val id: Int = 1)
 
 //{"stream":"linkbtc@miniTicker","data":{"e":"24hrMiniTicker","E":1609635173540,"s":"LINKBTC","c":"0.00037512",
 //"o":"0.00039578","h":"0.00040736","l":"0.00035792","v":"2850757.80000000","q":"1080.30113006"}}
@@ -37,23 +45,14 @@ fun performWebSocket() {
         println("Connecting...")
         client.wss(
             urlString = wsBaseUrl
-        ) { // this: DefaultClientWebSocketSession
+        ) {
             println("Connected!")
 
-            send("""
-                {
-                  "method": "SUBSCRIBE",
-                  "params": [
-                    "btcusdt@miniTicker",
-                    "ethusdt@miniTicker",
-                    "ethbtc@miniTicker",
-                    "ltcbtc@miniTicker",
-                    "dogebtc@miniTicker",
-                    "linkbtc@miniTicker"
-                  ],
-                  "id": 1
-                }
-            """.trimIndent())
+            val binanceSubscription = BinanceSubscription(
+                params = defaultTickers.map { symbol -> "${symbol.toLowerCase()}@miniTicker" }
+            )
+            println(Json.encodeToString(binanceSubscription))
+            send(Json.encodeToString(binanceSubscription))
 
             try {
                 for (frame in incoming) {
