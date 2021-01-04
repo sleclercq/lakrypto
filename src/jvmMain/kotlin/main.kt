@@ -1,7 +1,8 @@
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import kotlin.time.Duration
+import kotlinx.coroutines.launch
 import kotlin.time.ExperimentalTime
+
 
 /**
  *
@@ -10,9 +11,24 @@ import kotlin.time.ExperimentalTime
  */
 @ExperimentalTime
 fun main() {
-    println("Hello World!")
-    runBlocking {
+    println("Lakrypto starting...")
+
+    GlobalScope.launch {
+        repeat(Int.MAX_VALUE) {
+            println(miniTickers.map {
+                    entry -> "[${entry.key}] ${entry.value.value}"
+            }.joinToString())
+            delay(1000L)
+        }
+    }
+
+    GlobalScope.launch {
         performWebSocket()
-        delay(Duration.INFINITE)
+    }
+
+    var input = readLine()
+    while (input != "q") {
+        println(input)
+        input = readLine()
     }
 }

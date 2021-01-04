@@ -42,6 +42,8 @@ val run by tasks.creating(JavaExec::class) {
             { main.output.allOutputs.files },
             { configurations["jvmRuntimeClasspath"] }
         )
+        //accept console input
+        standardInput = System.`in`
     }
     ///disable app icon on macOS
     systemProperty("java.awt.headless", "true")
