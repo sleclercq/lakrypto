@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.math.roundToInt
 
 /**
  *
@@ -37,24 +38,40 @@ data class BinanceSubscription(@Required val method: String = "SUBSCRIBE",
 data class MiniTicker(@SerialName("s") val symbol: String,
                       @SerialName("c") val value: String)
 
-/*{
-    "e": "aggTrade",  // Event type
-    "E": 123456789,   // Event time
-    "s": "BNBBTC",    // Symbol
-    "a": 12345,       // Aggregate trade ID
-    "p": "0.001",     // Price
-    "q": "100",       // Quantity
-    "f": 100,         // First trade ID
-    "l": 105,         // Last trade ID
-    "T": 123456785,   // Trade time
-    "m": true,        // Is the buyer the market maker?
-    "M": true         // Ignore
-}*/
 @Serializable
 data class AggTrade(@SerialName("s") val symbol: String,
                     @SerialName("p") val price: Double,
                     @SerialName("q") val quantity: Double,
                     @SerialName("m") val buyerIsMM: Boolean)
+
+/*
+{
+
+    "e":"forceOrder",                   // Event Type
+    "E":1568014460893,                  // Event Time
+    "o":{
+
+    "s":"BTCUSDT",                   // Symbol
+    "S":"SELL",                      // Side
+    "o":"LIMIT",                     // Order Type
+    "f":"IOC",                       // Time in Force
+    "q":"0.014",                     // Original Quantity
+    "p":"9910",                      // Price
+    "ap":"9910",                     // Average Price
+    "X":"FILLED",                    // Order Status
+    "l":"0.014",                     // Order Last Filled Quantity
+    "z":"0.014",                     // Order Filled Accumulated Quantity
+    "T":1568014460893,              // Order Trade Time
+
+}
+*/
+@Serializable
+data class ForceOrder(@SerialName("s") val symbol: String,
+                      @SerialName("S") val side: String,
+                      @SerialName("q") val originalQuantity: Double,
+                      @SerialName("ap") val averagePrice: Double,
+                      @SerialName("X") val orderStatus: String)
+
 
 val miniTickers = mutableMapOf<String, MiniTicker>()
 
@@ -78,7 +95,8 @@ suspend fun performWebSocket() {
         val binanceSubscription = BinanceSubscription(
             //params = listOf("!miniTicker@arr")
             params = defaultTickers.map { symbol -> "${symbol.toLowerCase()}@miniTicker" }
-                .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@aggTrade" })
+                .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@aggTrade" }
+                    .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@forceOrder" }))
         )
         //println(format.encodeToString(binanceSubscription))
         send(format.encodeToString(binanceSubscription))
@@ -95,27 +113,35 @@ suspend fun performWebSocket() {
                    val data = binanceElement.jsonObject["data"]
                    println(data)
                    */
-                   when (val it = stream.jsonPrimitive.content.split('@').last()) {
-                       "miniTicker" -> {
-                           val data = binanceElement.jsonObject["data"]
-                           val miniTicker = format.decodeFromJsonElement<MiniTicker>(data!!)
-                           //println("[${miniTicker.symbol}] ${miniTicker.value}")
-                           miniTickers[miniTicker.symbol] = miniTicker
-                       }
-                       "aggTrade" -> {
-                           val data = binanceElement.jsonObject["data"]
-                           val aggTrade = format.decodeFromJsonElement<AggTrade>(data!!)
-                           // TODO contract on futs coin is 100usd for btc pair and 10usd for other pairs
-                           // TODO contract on futs usdt has the amount of coin as quantity
-                           // TODO spot has the amount of coin as quantity
-                           if (aggTrade.quantity * aggTrade.price >= 100_000) {
-                               println("[${aggTrade.symbol}] " +
-                                       "${aggTrade.quantity * aggTrade.price} " +
-                                       if (aggTrade.buyerIsMM) "SELL" else "BUY")
-                           }
-                       }
-                       else -> println("Could not decode $it")
-                   }
+                    when (val it = stream.jsonPrimitive.content.split('@').last()) {
+                        "miniTicker" -> {
+                            val data = binanceElement.jsonObject["data"]
+                            val miniTicker = format.decodeFromJsonElement<MiniTicker>(data!!)
+                            //println("[${miniTicker.symbol}] ${miniTicker.value}")
+                            miniTickers[miniTicker.symbol] = miniTicker
+                        }
+                        "aggTrade" -> {
+                            val data = binanceElement.jsonObject["data"]
+                            val aggTrade = format.decodeFromJsonElement<AggTrade>(data!!)
+                            // TODO contract on futs coin is 100usd for btc pair and 10usd for other pairs
+                            // TODO contract on futs usdt has the amount of coin as quantity
+                            // TODO spot has the amount of coin as quantity
+                            if (aggTrade.quantity * aggTrade.price >= 100_000) {
+                                println("[${aggTrade.symbol}] " +
+                                        "${(aggTrade.quantity * aggTrade.price / 1000).roundToInt()}K " +
+                                        if (aggTrade.buyerIsMM) "SELL" else "BUY")
+                            }
+                        }
+                        "forceOrder" -> {
+                            val data = binanceElement.jsonObject["data"]!!.jsonObject["o"]
+                            val forceOrder = format.decodeFromJsonElement<ForceOrder>(data!!)
+                            // TODO probably same remark as aggTrade for quantities
+                            println("[${forceOrder.symbol}] " +
+                                    "${(forceOrder.originalQuantity * forceOrder.averagePrice).roundToInt()} " +
+                                    "LIQUIDATION ${forceOrder.side} (${forceOrder.orderStatus})")
+                        }
+                        else -> println("Could not decode $it")
+                    }
 
                 }
 

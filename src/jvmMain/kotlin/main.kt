@@ -18,7 +18,7 @@ fun main() {
             println(miniTickers.map {
                     entry -> "[${entry.key}] ${entry.value.value}"
             }.joinToString())
-            delay(1000L)
+            delay(10000L)
         }
     }
 
