@@ -1,3 +1,8 @@
+import io.ktor.application.*
+import io.ktor.response.*
+import io.ktor.routing.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -26,9 +31,17 @@ fun main() {
         performWebSocket()
     }
 
-    var input = readLine()
-    while (input != "q") {
-        println(input)
-        input = readLine()
-    }
+
+    embeddedServer(Netty, port = 8000) {
+        routing {
+            get ("/") {
+                log.info("Hello from /api/v1!")
+
+                call.respondText("Hello, world!")
+            }
+        }
+    }.start(wait = true)
+
+
 }
+

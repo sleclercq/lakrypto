@@ -1,14 +1,15 @@
 import io.ktor.client.*
 import io.ktor.client.features.websocket.*
 import io.ktor.http.cio.websocket.*
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
-import kotlinx.coroutines.launch
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.util.*
 import kotlin.math.roundToInt
 
 /**
@@ -72,6 +73,42 @@ data class ForceOrder(@SerialName("s") val symbol: String,
                       @SerialName("ap") val averagePrice: Double,
                       @SerialName("X") val orderStatus: String)
 
+/*
+{
+    "e": "kline",     // Event type
+    "E": 123456789,   // Event time
+    "s": "BTCUSDT",    // Symbol
+    "k": {
+    "t": 123400000, // Kline start time
+    "T": 123460000, // Kline close time
+    "s": "BTCUSDT",  // Symbol
+    "i": "1m",      // Interval
+    "f": 100,       // First trade ID
+    "L": 200,       // Last trade ID
+    "o": "0.0010",  // Open price
+    "c": "0.0020",  // Close price
+    "h": "0.0025",  // High price
+    "l": "0.0015",  // Low price
+    "v": "1000",    // Base asset volume
+    "n": 100,       // Number of trades
+    "x": false,     // Is this kline closed?
+    "q": "1.0000",  // Quote asset volume
+    "V": "500",     // Taker buy base asset volume
+    "Q": "0.500",   // Taker buy quote asset volume
+    "B": "123456"   // Ignore
+}}
+*/
+@Serializable
+data class KLine(@SerialName("s") val symbol: String,
+                 @SerialName("t") val startTime: String, // TODO convert to datetime ?
+                 @SerialName("T") val closeTime: String, // TODO convert to datetime ?
+                 @SerialName("i") val interval: String,
+                 @SerialName("o") val open: Double,
+                 @SerialName("h") val high: Double,
+                 @SerialName("l") val low: Double,
+                 @SerialName("c") val close: Double,
+                 @SerialName("v") val volume: Double)
+
 
 val miniTickers = mutableMapOf<String, MiniTicker>()
 
@@ -85,6 +122,7 @@ val client = HttpClient {
     install(WebSockets)
 }
 
+
 suspend fun performWebSocket() {
     println("Connecting...")
     client.wss(
@@ -96,7 +134,8 @@ suspend fun performWebSocket() {
             //params = listOf("!miniTicker@arr")
             params = defaultTickers.map { symbol -> "${symbol.toLowerCase()}@miniTicker" }
                 .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@aggTrade" }
-                    .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@forceOrder" }))
+                    .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@forceOrder" }
+                        .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@kline_1m"})))
         )
         //println(format.encodeToString(binanceSubscription))
         send(format.encodeToString(binanceSubscription))
@@ -109,20 +148,15 @@ suspend fun performWebSocket() {
                 if (stream == null) {
                     //println(binanceElement)
                 } else {
-                    /*
-                   val data = binanceElement.jsonObject["data"]
-                   println(data)
-                   */
+                    val data = binanceElement.jsonObject["data"]!!
                     when (val it = stream.jsonPrimitive.content.split('@').last()) {
                         "miniTicker" -> {
-                            val data = binanceElement.jsonObject["data"]
-                            val miniTicker = format.decodeFromJsonElement<MiniTicker>(data!!)
+                            val miniTicker = format.decodeFromJsonElement<MiniTicker>(data)
                             //println("[${miniTicker.symbol}] ${miniTicker.value}")
                             miniTickers[miniTicker.symbol] = miniTicker
                         }
                         "aggTrade" -> {
-                            val data = binanceElement.jsonObject["data"]
-                            val aggTrade = format.decodeFromJsonElement<AggTrade>(data!!)
+                            val aggTrade = format.decodeFromJsonElement<AggTrade>(data)
                             // TODO contract on futs coin is 100usd for btc pair and 10usd for other pairs
                             // TODO contract on futs usdt has the amount of coin as quantity
                             // TODO spot has the amount of coin as quantity
@@ -133,12 +167,20 @@ suspend fun performWebSocket() {
                             }
                         }
                         "forceOrder" -> {
-                            val data = binanceElement.jsonObject["data"]!!.jsonObject["o"]
-                            val forceOrder = format.decodeFromJsonElement<ForceOrder>(data!!)
+                            val forceOrder = format.decodeFromJsonElement<ForceOrder>(data.jsonObject["o"]!!)
                             // TODO probably same remark as aggTrade for quantities
                             println("[${forceOrder.symbol}] " +
                                     "${(forceOrder.originalQuantity * forceOrder.averagePrice).roundToInt()} " +
                                     "LIQUIDATION ${forceOrder.side} (${forceOrder.orderStatus})")
+                        }
+                        "kline_1m" -> {
+                            val kLine = format.decodeFromJsonElement<KLine>(data.jsonObject["k"]!!)
+                            val date = LocalDateTime.ofEpochSecond(kLine.startTime.substring(0, kLine.startTime.length - 3).toLong(), 0, ZoneOffset.UTC)
+                            println("[${kLine.symbol}] " +
+                                    "KLINE TS $date " +
+                                    "OHLC(${kLine.open.roundToInt()} ${kLine.high.roundToInt()} " +
+                                    "${kLine.low.roundToInt()} ${kLine.close.roundToInt()}) " +
+                                    "vol ${kLine.volume}")
                         }
                         else -> println("Could not decode $it")
                     }

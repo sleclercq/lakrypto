@@ -9,6 +9,7 @@ repositories {
 }
 
 val ktorVersion = "1.5.0"
+val logbackVersion = "1.2.3"
 
 kotlin {
     kotlin {
@@ -23,9 +24,21 @@ kotlin {
             val jvmMain by getting {
                 dependencies {
                     implementation(kotlin("stdlib-jdk8"))
+                    //implementation("io.ktor:ktor:$ktorVersion")
                     implementation("io.ktor:ktor-client-websockets:$ktorVersion")
                     implementation("io.ktor:ktor-client-cio:$ktorVersion")
+                    implementation("io.ktor:ktor-server-core:$ktorVersion")
+                    implementation("io.ktor:ktor-server-netty:$ktorVersion")
+                    implementation("ch.qos.logback:logback-classic:$logbackVersion")
+                    implementation("io.ktor:ktor-serialization:$ktorVersion")
+
                     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.0.1")
+
+                }
+            }
+            val jvmTest by getting {
+                dependencies {
+                    implementation("io.ktor:ktor-server-tests:$ktorVersion")
                 }
             }
         }
