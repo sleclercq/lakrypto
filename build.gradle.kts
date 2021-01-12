@@ -33,7 +33,8 @@ kotlin {
                     implementation("io.ktor:ktor-serialization:$ktorVersion")
 
                     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.0.1")
-
+                    implementation("io.github.cdimascio:dotenv-kotlin:6.2.2")
+                    implementation("commons-codec:commons-codec:1.15")
                 }
             }
             val jvmTest by getting {

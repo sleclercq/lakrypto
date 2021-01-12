@@ -6,6 +6,9 @@ import io.ktor.server.netty.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.apache.commons.codec.binary.Hex
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import kotlin.time.ExperimentalTime
 
 
@@ -36,8 +39,7 @@ fun main() {
         routing {
             get ("/") {
                 log.info("Hello from /api/v1!")
-
-                call.respondText("Hello, world!")
+                call.respondText(clientTest())
             }
         }
     }.start(wait = true)

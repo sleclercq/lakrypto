@@ -1,5 +1,8 @@
+import io.github.cdimascio.dotenv.dotenv
 import io.ktor.client.*
 import io.ktor.client.features.websocket.*
+import io.ktor.client.request.*
+import io.ktor.http.*
 import io.ktor.http.cio.websocket.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.serialization.*
@@ -7,9 +10,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.apache.commons.codec.binary.Hex
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
-import java.util.*
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import kotlin.math.roundToInt
 
 /**
@@ -24,6 +30,9 @@ import kotlin.math.roundToInt
 
 // Futs USDT
 const val wsBaseUrl = "wss://fstream.binance.com/stream"
+val dotenv = dotenv()
+val apiKey = dotenv["API_KEY"]
+val apiSecret = dotenv["API_SECRET"]
 val defaultTickers = listOf("BTCUSDT")
 
 // Futs coin
@@ -118,10 +127,37 @@ val format = Json {
     isLenient = true
 }
 
+fun signRequest(data: String): String {
+    return createSignature(data, apiSecret)
+}
+
+fun createSignature(data: String, key: String): String {
+    val sha256Hmac = Mac.getInstance("HmacSHA256")
+    val secretKey = SecretKeySpec(key.toByteArray(), "HmacSHA256")
+    sha256Hmac.init(secretKey)
+
+    return Hex.encodeHexString(sha256Hmac.doFinal(data.toByteArray()))
+
+    // For base64
+    // return Base64.getEncoder().encodeToString(sha256Hmac.doFinal(data.toByteArray()))
+}
+
+suspend fun clientTest(): String {
+
+    val params = "symbol=BTCUSDT&side=BUY&type=LIMIT&quantity=1&price=34000&timeInForce=GTC&recvWindow=5000&timestamp=${Instant.now().toEpochMilli()}"
+    println(params)
+    val signature = signRequest(params)
+    println(signature)
+    // mainnet : fapi.binance.com
+    return client.post("https://testnet.binancefuture.com/fapi/v1/order?$params&signature=$signature") {
+        header("X-MBX-APIKEY", apiKey)
+    }
+
+}
+
 val client = HttpClient {
     install(WebSockets)
 }
-
 
 suspend fun performWebSocket() {
     println("Connecting...")
