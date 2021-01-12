@@ -5,7 +5,10 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.http.cio.websocket.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
-import kotlinx.serialization.*
+import kotlinx.serialization.Required
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -40,19 +43,25 @@ val defaultTickers = listOf("BTCUSDT")
 //val defaultTickers = listOf("BTCUSD_PERP")
 
 @Serializable
-data class BinanceSubscription(@Required val method: String = "SUBSCRIBE",
-                               @Required val params: List<String> = listOf(),
-                               @Required val id: Int = 1)
+data class BinanceSubscription(
+    @Required val method: String = "SUBSCRIBE",
+    @Required val params: List<String> = listOf(),
+    @Required val id: Int = 1
+)
 
 @Serializable
-data class MiniTicker(@SerialName("s") val symbol: String,
-                      @SerialName("c") val value: String)
+data class MiniTicker(
+    @SerialName("s") val symbol: String,
+    @SerialName("c") val value: String
+)
 
 @Serializable
-data class AggTrade(@SerialName("s") val symbol: String,
-                    @SerialName("p") val price: Double,
-                    @SerialName("q") val quantity: Double,
-                    @SerialName("m") val buyerIsMM: Boolean)
+data class AggTrade(
+    @SerialName("s") val symbol: String,
+    @SerialName("p") val price: Double,
+    @SerialName("q") val quantity: Double,
+    @SerialName("m") val buyerIsMM: Boolean
+)
 
 /*
 {
@@ -76,11 +85,13 @@ data class AggTrade(@SerialName("s") val symbol: String,
 }
 */
 @Serializable
-data class ForceOrder(@SerialName("s") val symbol: String,
-                      @SerialName("S") val side: String,
-                      @SerialName("q") val originalQuantity: Double,
-                      @SerialName("ap") val averagePrice: Double,
-                      @SerialName("X") val orderStatus: String)
+data class ForceOrder(
+    @SerialName("s") val symbol: String,
+    @SerialName("S") val side: String,
+    @SerialName("q") val originalQuantity: Double,
+    @SerialName("ap") val averagePrice: Double,
+    @SerialName("X") val orderStatus: String
+)
 
 /*
 {
@@ -108,15 +119,17 @@ data class ForceOrder(@SerialName("s") val symbol: String,
 }}
 */
 @Serializable
-data class KLine(@SerialName("s") val symbol: String,
-                 @SerialName("t") val startTime: String, // TODO convert to datetime ?
-                 @SerialName("T") val closeTime: String, // TODO convert to datetime ?
-                 @SerialName("i") val interval: String,
-                 @SerialName("o") val open: Double,
-                 @SerialName("h") val high: Double,
-                 @SerialName("l") val low: Double,
-                 @SerialName("c") val close: Double,
-                 @SerialName("v") val volume: Double)
+data class KLine(
+    @SerialName("s") val symbol: String,
+    @SerialName("t") val startTime: String, // TODO convert to datetime ?
+    @SerialName("T") val closeTime: String, // TODO convert to datetime ?
+    @SerialName("i") val interval: String,
+    @SerialName("o") val open: Double,
+    @SerialName("h") val high: Double,
+    @SerialName("l") val low: Double,
+    @SerialName("c") val close: Double,
+    @SerialName("v") val volume: Double
+)
 
 
 val miniTickers = mutableMapOf<String, MiniTicker>()
@@ -142,17 +155,38 @@ fun createSignature(data: String, key: String): String {
     // return Base64.getEncoder().encodeToString(sha256Hmac.doFinal(data.toByteArray()))
 }
 
+fun extractQueryParamsAsText(sourceBuilder: URLBuilder): String {
+    val builderCopy = URLBuilder(sourceBuilder)
+    return builderCopy
+        .build()
+        .fullPath
+        .substringAfter("?")
+}
+
+fun URLBuilder.signedParameters(block: URLBuilder.() -> Unit) {
+    val currentBuilder = this
+    currentBuilder.block()
+    val queryParamsAsText = extractQueryParamsAsText(currentBuilder)
+    parameters.append("signature", signRequest(queryParamsAsText))
+}
+
 suspend fun clientTest(): String {
 
-    val params = "symbol=BTCUSDT&side=BUY&type=LIMIT&quantity=1&price=34000&timeInForce=GTC&recvWindow=5000&timestamp=${Instant.now().toEpochMilli()}"
-    println(params)
-    val signature = signRequest(params)
-    println(signature)
-    // mainnet : fapi.binance.com
-    return client.post("https://testnet.binancefuture.com/fapi/v1/order?$params&signature=$signature") {
+    return client.post("https://testnet.binancefuture.com/fapi/v1/order") {
         header("X-MBX-APIKEY", apiKey)
+        url {
+            signedParameters {
+                parameter("symbol", "BTCUSDT")
+                parameter("side", "BUY")
+                parameter("type", "LIMIT")
+                parameter("quantity", 1)
+                parameter("price", 34000)
+                parameter("timeInForce", "GTC")
+                parameter("recvWindow", 5000)
+                parameter("timestamp", Instant.now().toEpochMilli())
+            }
+        }
     }
-
 }
 
 val client = HttpClient {
@@ -171,7 +205,7 @@ suspend fun performWebSocket() {
             params = defaultTickers.map { symbol -> "${symbol.toLowerCase()}@miniTicker" }
                 .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@aggTrade" }
                     .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@forceOrder" }
-                        .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@kline_1m"})))
+                        .plus(defaultTickers.map { symbol -> "${symbol.toLowerCase()}@kline_1m" })))
         )
         //println(format.encodeToString(binanceSubscription))
         send(format.encodeToString(binanceSubscription))
@@ -197,26 +231,34 @@ suspend fun performWebSocket() {
                             // TODO contract on futs usdt has the amount of coin as quantity
                             // TODO spot has the amount of coin as quantity
                             if (aggTrade.quantity * aggTrade.price >= 100_000) {
-                                println("[${aggTrade.symbol}] " +
-                                        "${(aggTrade.quantity * aggTrade.price / 1000).roundToInt()}K " +
-                                        if (aggTrade.buyerIsMM) "SELL" else "BUY")
+                                println(
+                                    "[${aggTrade.symbol}] " +
+                                            "${(aggTrade.quantity * aggTrade.price / 1000).roundToInt()}K " +
+                                            if (aggTrade.buyerIsMM) "SELL" else "BUY"
+                                )
                             }
                         }
                         "forceOrder" -> {
                             val forceOrder = format.decodeFromJsonElement<ForceOrder>(data.jsonObject["o"]!!)
                             // TODO probably same remark as aggTrade for quantities
-                            println("[${forceOrder.symbol}] " +
-                                    "${(forceOrder.originalQuantity * forceOrder.averagePrice).roundToInt()} " +
-                                    "LIQUIDATION ${forceOrder.side} (${forceOrder.orderStatus})")
+                            println(
+                                "[${forceOrder.symbol}] " +
+                                        "${(forceOrder.originalQuantity * forceOrder.averagePrice).roundToInt()} " +
+                                        "LIQUIDATION ${forceOrder.side} (${forceOrder.orderStatus})"
+                            )
                         }
                         "kline_1m" -> {
                             val kLine = format.decodeFromJsonElement<KLine>(data.jsonObject["k"]!!)
-                            val date = LocalDateTime.ofEpochSecond(kLine.startTime.substring(0, kLine.startTime.length - 3).toLong(), 0, ZoneOffset.UTC)
-                            println("[${kLine.symbol}] " +
-                                    "KLINE TS $date " +
-                                    "OHLC(${kLine.open.roundToInt()} ${kLine.high.roundToInt()} " +
-                                    "${kLine.low.roundToInt()} ${kLine.close.roundToInt()}) " +
-                                    "vol ${kLine.volume}")
+                            val date = LocalDateTime.ofEpochSecond(
+                                kLine.startTime.substring(0, kLine.startTime.length - 3).toLong(), 0, ZoneOffset.UTC
+                            )
+                            println(
+                                "[${kLine.symbol}] " +
+                                        "KLINE TS $date " +
+                                        "OHLC(${kLine.open.roundToInt()} ${kLine.high.roundToInt()} " +
+                                        "${kLine.low.roundToInt()} ${kLine.close.roundToInt()}) " +
+                                        "vol ${kLine.volume}"
+                            )
                         }
                         else -> println("Could not decode $it")
                     }
