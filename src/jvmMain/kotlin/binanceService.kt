@@ -26,10 +26,15 @@ import kotlin.math.roundToInt
  * Created on 1/3/21.
  * @author Stephane Leclercq
  */
+
+const val MAX_ORDERS_PER_BATCH = 5
+
 // Spot
 //const val wsBaseUrl = "wss://stream.binance.com/stream"
 //val defaultTickers = listOf("BTCUSDT", "ETHUSDT", "ETHBTC", "LTCBTC", "DOGEBTC", "LINKBTC")
 //val defaultTickers = listOf("BTCUSDT", "ETHUSDT", "LTCUSDT")
+
+const val baseUrl = "https://testnet.binancefuture.com/fapi/v1"
 
 // Futs USDT
 const val wsBaseUrl = "wss://fstream.binance.com/stream"
@@ -49,6 +54,7 @@ data class BinanceSubscription(
     @Required val id: Int = 1
 )
 
+// Types of streams
 @Serializable
 data class MiniTicker(
     @SerialName("s") val symbol: String,
@@ -63,27 +69,6 @@ data class AggTrade(
     @SerialName("m") val buyerIsMM: Boolean
 )
 
-/*
-{
-
-    "e":"forceOrder",                   // Event Type
-    "E":1568014460893,                  // Event Time
-    "o":{
-
-    "s":"BTCUSDT",                   // Symbol
-    "S":"SELL",                      // Side
-    "o":"LIMIT",                     // Order Type
-    "f":"IOC",                       // Time in Force
-    "q":"0.014",                     // Original Quantity
-    "p":"9910",                      // Price
-    "ap":"9910",                     // Average Price
-    "X":"FILLED",                    // Order Status
-    "l":"0.014",                     // Order Last Filled Quantity
-    "z":"0.014",                     // Order Filled Accumulated Quantity
-    "T":1568014460893,              // Order Trade Time
-
-}
-*/
 @Serializable
 data class ForceOrder(
     @SerialName("s") val symbol: String,
@@ -93,31 +78,6 @@ data class ForceOrder(
     @SerialName("X") val orderStatus: String
 )
 
-/*
-{
-    "e": "kline",     // Event type
-    "E": 123456789,   // Event time
-    "s": "BTCUSDT",    // Symbol
-    "k": {
-    "t": 123400000, // Kline start time
-    "T": 123460000, // Kline close time
-    "s": "BTCUSDT",  // Symbol
-    "i": "1m",      // Interval
-    "f": 100,       // First trade ID
-    "L": 200,       // Last trade ID
-    "o": "0.0010",  // Open price
-    "c": "0.0020",  // Close price
-    "h": "0.0025",  // High price
-    "l": "0.0015",  // Low price
-    "v": "1000",    // Base asset volume
-    "n": 100,       // Number of trades
-    "x": false,     // Is this kline closed?
-    "q": "1.0000",  // Quote asset volume
-    "V": "500",     // Taker buy base asset volume
-    "Q": "0.500",   // Taker buy quote asset volume
-    "B": "123456"   // Ignore
-}}
-*/
 @Serializable
 data class KLine(
     @SerialName("s") val symbol: String,
@@ -131,7 +91,29 @@ data class KLine(
     @SerialName("v") val volume: Double
 )
 
+// Orders
+enum class OrderSide { BUY, SELL }
 
+enum class OrderType { LIMIT, MARKET }
+
+enum class OrderTimeInForce {
+    GTC, // Good Till Cancel
+    IOC, // Immediate or Cancel
+    FOK, // Fill or Kill
+    GTX  // Good Till Crossing (Post Only)
+}
+
+@Serializable
+data class OrderRequest(
+    val symbol: String,
+    val side: OrderSide,
+    val type: OrderType,
+    val quantity: String,
+    val price: String,
+    val timeInForce: OrderTimeInForce = OrderTimeInForce.GTX)
+// TODO add reduceOnly
+
+// misc
 val miniTickers = mutableMapOf<String, MiniTicker>()
 
 val format = Json {
@@ -170,23 +152,40 @@ fun URLBuilder.signedParameters(block: URLBuilder.() -> Unit) {
     parameters.append("signature", signRequest(queryParamsAsText))
 }
 
-suspend fun clientTest(): String {
+suspend fun createOrder(orderRequest: OrderRequest): String {
 
-    return client.post("https://testnet.binancefuture.com/fapi/v1/order") {
+    return client.post("$baseUrl/order") {
         header("X-MBX-APIKEY", apiKey)
         url {
             signedParameters {
-                parameter("symbol", "BTCUSDT")
-                parameter("side", "BUY")
-                parameter("type", "LIMIT")
-                parameter("quantity", 1)
-                parameter("price", 34000)
-                parameter("timeInForce", "GTC")
+                parameter("symbol", orderRequest.symbol)
+                parameter("side", orderRequest.side)
+                parameter("type", orderRequest.type)
+                parameter("quantity", orderRequest.quantity)
+                parameter("price", orderRequest.price)
+                parameter("timeInForce", orderRequest.timeInForce)
                 parameter("recvWindow", 5000)
                 parameter("timestamp", Instant.now().toEpochMilli())
             }
         }
     }
+}
+
+suspend fun batchOrders(orderRequests: List<OrderRequest>): String {
+    val batchOrdersParamValue = format.encodeToString(orderRequests)
+    println(batchOrdersParamValue)
+
+    return client.post("$baseUrl/batchOrders") {
+        header("X-MBX-APIKEY", apiKey)
+        url {
+            signedParameters {
+                parameter("batchOrders", batchOrdersParamValue)
+                parameter("recvWindow", 5000)
+                parameter("timestamp", Instant.now().toEpochMilli())
+            }
+        }
+    }
+
 }
 
 val client = HttpClient {
