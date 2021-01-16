@@ -2,6 +2,7 @@ import io.github.cdimascio.dotenv.dotenv
 import io.ktor.client.*
 import io.ktor.client.features.websocket.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.http.cio.websocket.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
@@ -152,8 +153,7 @@ fun URLBuilder.signedParameters(block: URLBuilder.() -> Unit) {
     parameters.append("signature", signRequest(queryParamsAsText))
 }
 
-suspend fun createOrder(orderRequest: OrderRequest): String {
-
+suspend fun createOrder(orderRequest: OrderRequest): HttpResponse {
     return client.post("$baseUrl/order") {
         header("X-MBX-APIKEY", apiKey)
         url {
@@ -171,7 +171,7 @@ suspend fun createOrder(orderRequest: OrderRequest): String {
     }
 }
 
-suspend fun batchOrders(orderRequests: List<OrderRequest>): String {
+suspend fun batchOrders(orderRequests: List<OrderRequest>): HttpResponse {
     val batchOrdersParamValue = format.encodeToString(orderRequests)
     println(batchOrdersParamValue)
 

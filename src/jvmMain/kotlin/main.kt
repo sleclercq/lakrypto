@@ -1,4 +1,6 @@
 import io.ktor.application.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
 import io.ktor.response.*
 import io.ktor.routing.*
 import io.ktor.server.engine.*
@@ -6,9 +8,6 @@ import io.ktor.server.netty.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.apache.commons.codec.binary.Hex
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 import kotlin.time.ExperimentalTime
 
 
@@ -46,19 +45,41 @@ fun main() {
             get ("/order") {
                 val orderRequest = OrderRequest("BTCUSDT", OrderSide.BUY, OrderType.LIMIT,
                     "0.001", "34000.0")
-                call.respondText(createOrder(orderRequest))
+                // TODO create a generic function
+                for (i in 1..5) {
+                    val response = createOrder(orderRequest)
+                    if (response.status.isSuccess()) {
+                        call.respondText(response.readText())
+                        return@get
+                    }
+                    log.info("Call error : $response")
+                    delay(2000)
+                }
             }
+            // test : http://localhost:
             get ("/batchOrders") {
-                val spreadLow = 34000
-                val spreadHigh = 34100
+                val queryParameters: Parameters = call.parameters
+                val spreadLow: Double = call.parameters["spreadLow"]?.toDouble() ?: 0.0
+                val spreadHigh: Double = call.parameters["spreadHigh"]?.toDouble() ?: 0.0
+                val totalQuantity = call.parameters["totalQuantity"]?.toDouble() ?: 0.0
                 val increment = (spreadHigh - spreadLow) / (MAX_ORDERS_PER_BATCH - 1)
-                val totalQuantity = 0.01
                 var orderList = listOf<OrderRequest>()
-                for (price in spreadLow..spreadHigh step increment) {
+                var price = spreadLow
+                while (price <= spreadHigh) {
                     val quantity = (totalQuantity / MAX_ORDERS_PER_BATCH).roundForOrder(3)
                     orderList = orderList.plus(OrderRequest("BTCUSDT", OrderSide.BUY, OrderType.LIMIT, quantity, price.toString()))
+                    price += increment
                 }
-                call.respondText(batchOrders(orderList))
+                // TODO create a generic function
+                for (i in 1..5) {
+                    val response = batchOrders(orderList)
+                    if (response.status.isSuccess()) {
+                        call.respondText(response.readText())
+                        return@get
+                    }
+                    log.info("Call error : $response")
+                    delay(2000)
+                }
             }
         }
     }.start(wait = true)
@@ -66,3 +87,15 @@ fun main() {
 
 }
 
+/*
+suspend fun <T> performAction(param: T, action: (T) -> HttpResponse): Unit {
+    val test: String? = "test"
+    println(test?.length ?: "empty")
+    action(param)
+    test.let {  }
+
+
+}
+
+
+*/
