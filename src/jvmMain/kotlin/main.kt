@@ -5,6 +5,7 @@ import io.ktor.response.*
 import io.ktor.routing.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
+import io.ktor.util.pipeline.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -45,20 +46,10 @@ fun main() {
             get ("/order") {
                 val orderRequest = OrderRequest("BTCUSDT", OrderSide.BUY, OrderType.LIMIT,
                     "0.001", "34000.0")
-                // TODO create a generic function
-                for (i in 1..5) {
-                    val response = createOrder(orderRequest)
-                    if (response.status.isSuccess()) {
-                        call.respondText(response.readText())
-                        return@get
-                    }
-                    log.info("Call error : $response")
-                    delay(2000)
-                }
+                callWithRetries { createOrder(orderRequest) }
             }
             // test : http://localhost:
             get ("/batchOrders") {
-                val queryParameters: Parameters = call.parameters
                 val spreadLow: Double = call.parameters["spreadLow"]?.toDouble() ?: 0.0
                 val spreadHigh: Double = call.parameters["spreadHigh"]?.toDouble() ?: 0.0
                 val totalQuantity = call.parameters["totalQuantity"]?.toDouble() ?: 0.0
@@ -70,16 +61,7 @@ fun main() {
                     orderList = orderList.plus(OrderRequest("BTCUSDT", OrderSide.BUY, OrderType.LIMIT, quantity, price.toString()))
                     price += increment
                 }
-                // TODO create a generic function
-                for (i in 1..5) {
-                    val response = batchOrders(orderList)
-                    if (response.status.isSuccess()) {
-                        call.respondText(response.readText())
-                        return@get
-                    }
-                    log.info("Call error : $response")
-                    delay(2000)
-                }
+                callWithRetries { batchOrders(orderList) }
             }
         }
     }.start(wait = true)
@@ -87,15 +69,15 @@ fun main() {
 
 }
 
-/*
-suspend fun <T> performAction(param: T, action: (T) -> HttpResponse): Unit {
-    val test: String? = "test"
-    println(test?.length ?: "empty")
-    action(param)
-    test.let {  }
-
-
+suspend fun PipelineContext<Unit, ApplicationCall>.callWithRetries(action: suspend () -> HttpResponse) {
+    for (i in 1..5) {
+        val response = action()
+        if (response.status.isSuccess()) {
+            call.respondText(response.readText())
+            return
+        }
+        call.application.environment.log.info("Call error : $response")
+        delay(2000)
+    }
 }
 
-
-*/
