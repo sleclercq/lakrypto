@@ -1,3 +1,8 @@
+import BinanceService.Companion.MAX_ORDERS_PER_BATCH
+import BinanceService.Companion.batchOrders
+import BinanceService.Companion.createOrder
+import BinanceService.Companion.miniTickers
+import BinanceService.Companion.performWebSocket
 import io.ktor.application.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -9,6 +14,7 @@ import io.ktor.util.pipeline.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import mu.KotlinLogging
 import kotlin.time.ExperimentalTime
 
 
@@ -20,21 +26,24 @@ import kotlin.time.ExperimentalTime
 fun Double.round(decimals: Int = 2): Double = "%.${decimals}f".format(this).toDouble()
 fun Double.roundForOrder(decimals: Int = 2): String = this.round(decimals).toBigDecimal().toPlainString()
 
+private val logger = KotlinLogging.logger {}
+
 @ExperimentalTime
 fun main() {
-    println("Lakrypto starting...")
+    logger.info { "Lakrypto starting..." }
 
     GlobalScope.launch {
         repeat(Int.MAX_VALUE) {
-            println(miniTickers.map {
+            logger.info { miniTickers.map {
                     entry -> "[${entry.key}] ${entry.value.value}"
-            }.joinToString())
+            }.joinToString() }
             delay(10000L)
         }
     }
 
     GlobalScope.launch {
-        performWebSocket()
+        //performWebSocket()
+        BybitService.performWebSocket()
     }
 
 
@@ -44,8 +53,10 @@ fun main() {
                 call.respondText("omghi")
             }
             get ("/order") {
-                val orderRequest = OrderRequest("BTCUSDT", OrderSide.BUY, OrderType.LIMIT,
-                    "0.001", "34000.0")
+                val orderRequest = BinanceService.Companion.OrderRequest(
+                    "BTCUSDT", BinanceService.Companion.OrderSide.BUY, BinanceService.Companion.OrderType.LIMIT,
+                    "0.001", "34000.0"
+                )
                 callWithRetries { createOrder(orderRequest) }
             }
             // test : http://localhost:
@@ -54,11 +65,19 @@ fun main() {
                 val spreadHigh: Double = call.parameters["spreadHigh"]?.toDouble() ?: 0.0
                 val totalQuantity = call.parameters["totalQuantity"]?.toDouble() ?: 0.0
                 val increment = (spreadHigh - spreadLow) / (MAX_ORDERS_PER_BATCH - 1)
-                var orderList = listOf<OrderRequest>()
+                var orderList = listOf<BinanceService.Companion.OrderRequest>()
                 var price = spreadLow
                 while (price <= spreadHigh) {
                     val quantity = (totalQuantity / MAX_ORDERS_PER_BATCH).roundForOrder(3)
-                    orderList = orderList.plus(OrderRequest("BTCUSDT", OrderSide.BUY, OrderType.LIMIT, quantity, price.toString()))
+                    orderList = orderList.plus(
+                        BinanceService.Companion.OrderRequest(
+                            "BTCUSDT",
+                            BinanceService.Companion.OrderSide.BUY,
+                            BinanceService.Companion.OrderType.LIMIT,
+                            quantity,
+                            price.toString()
+                        )
+                    )
                     price += increment
                 }
                 callWithRetries { batchOrders(orderList) }
@@ -68,6 +87,7 @@ fun main() {
 
 
 }
+
 
 suspend fun PipelineContext<Unit, ApplicationCall>.callWithRetries(action: suspend () -> HttpResponse) {
     for (i in 1..5) {
